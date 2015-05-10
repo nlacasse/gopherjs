@@ -701,8 +701,8 @@ func translateFunction(typ *ast.FuncType, initStmts []ast.Stmt, body *ast.BlockS
 	}
 
 	if c.HasDefer {
-		prefix = prefix + " var $err = null; try {"
-		deferSuffix := " } catch(err) { $err = err;"
+		prefix = prefix + " var $err = null; var $$f = function() {"
+		deferSuffix := "}; try { return $$f.call(this); } catch(err) { $err = err;"
 		if len(c.Blocking) != 0 {
 			deferSuffix += " $s = -1;"
 		}
