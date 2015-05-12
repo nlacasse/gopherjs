@@ -11,6 +11,52 @@ var $getStackDepth = function() {
 };
 
 var $panicStackDepth = null, $panicValue;
+
+var $deferWhileLoop = function(deferred, localPanicValue, fromPanic) {
+  while (true) {
+    if (deferred === null) {
+      deferred = $curGoroutine.deferStack[$curGoroutine.deferStack.length - 1];
+      if (deferred === undefined) {
+        if (localPanicValue.Object instanceof Error) {
+          throw localPanicValue.Object;
+        }
+        var msg;
+        if (localPanicValue.constructor === $String) {
+          msg = localPanicValue.$val;
+        } else if (localPanicValue.Error !== undefined) {
+          msg = localPanicValue.Error();
+        } else if (localPanicValue.String !== undefined) {
+          msg = localPanicValue.String();
+        } else {
+          msg = localPanicValue;
+        }
+        throw new Error(msg);
+      }
+    }
+    var call = deferred.pop();
+    if (call === undefined) {
+      $curGoroutine.deferStack.pop();
+      if (localPanicValue !== undefined) {
+        deferred = null;
+        continue;
+      }
+      return;
+    }
+    var r = call[0].apply(call[2], call[1]);
+    if (r && r.$blk !== undefined) {
+      deferred.push([r.$blk, [], r]);
+      if (fromPanic) {
+        throw null;
+      }
+      return;
+    }
+
+    if (localPanicValue !== undefined && $panicStackDepth === null) {
+      throw null; /* error was recovered */
+    }
+  }
+};
+
 var $callDeferred = function(deferred, jsErr, fromPanic) {
   if (!fromPanic && deferred !== null && deferred.index >= $curGoroutine.deferStack.length) {
     throw jsErr;
@@ -42,48 +88,7 @@ var $callDeferred = function(deferred, jsErr, fromPanic) {
   }
 
   try {
-    while (true) {
-      if (deferred === null) {
-        deferred = $curGoroutine.deferStack[$curGoroutine.deferStack.length - 1];
-        if (deferred === undefined) {
-          if (localPanicValue.Object instanceof Error) {
-            throw localPanicValue.Object;
-          }
-          var msg;
-          if (localPanicValue.constructor === $String) {
-            msg = localPanicValue.$val;
-          } else if (localPanicValue.Error !== undefined) {
-            msg = localPanicValue.Error();
-          } else if (localPanicValue.String !== undefined) {
-            msg = localPanicValue.String();
-          } else {
-            msg = localPanicValue;
-          }
-          throw new Error(msg);
-        }
-      }
-      var call = deferred.pop();
-      if (call === undefined) {
-        $curGoroutine.deferStack.pop();
-        if (localPanicValue !== undefined) {
-          deferred = null;
-          continue;
-        }
-        return;
-      }
-      var r = call[0].apply(call[2], call[1]);
-      if (r && r.$blk !== undefined) {
-        deferred.push([r.$blk, [], r]);
-        if (fromPanic) {
-          throw null;
-        }
-        return;
-      }
-
-      if (localPanicValue !== undefined && $panicStackDepth === null) {
-        throw null; /* error was recovered */
-      }
-    }
+    $deferWhileLoop(deferred, localPanicValue, fromPanic);
   } finally {
     if (localPanicValue !== undefined) {
       if ($panicStackDepth !== null) {
@@ -101,7 +106,7 @@ var $panic = function(value) {
   $callDeferred(null, null, true);
 };
 var $recover = function() {
-  if ($panicStackDepth === null || ($panicStackDepth !== undefined && $panicStackDepth !== $getStackDepth() - 2)) {
+  if ($panicStackDepth === null || ($panicStackDepth !== undefined && $panicStackDepth !== $getStackDepth() - 3)) {
     return $ifaceNil;
   }
   $panicStackDepth = null;
